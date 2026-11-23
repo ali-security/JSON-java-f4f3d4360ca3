@@ -117,4 +117,55 @@ public class Util {
             );
         }
     }
+
+    /**
+     * Runs the given code on a new thread that has a large (8 MB) stack and
+     * returns whatever it threw, or <code>null</code> if it completed normally.
+     * <p>
+     * The tests may be run with a small stack (for example -Xss512k). On such a
+     * stack several hundred levels of recursive XML/JSONML parsing can overflow
+     * the stack before the default maximum nesting depth is reached, which would
+     * make a StackOverflowError indistinguishable from the expected
+     * JSONException. Running the code on a large stack keeps the depth limit
+     * as the only thing that can stop the parser.
+     * @param runnable the code to run
+     * @return the Throwable thrown by the code, or null if none was thrown
+     */
+    public static Throwable throwableFromLargeStack(final Runnable runnable) {
+        final Throwable[] thrown = new Throwable[1];
+        Thread thread = new Thread(null, new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    runnable.run();
+                } catch (Throwable t) {
+                    thrown[0] = t;
+                }
+            }
+        }, "large-stack-test", 8L * 1024 * 1024);
+        thread.start();
+        try {
+            thread.join();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(
+                "Interrupted while waiting for the large stack test thread", e);
+        }
+        return thrown[0];
+    }
+
+    /**
+     * Asserts that the given Throwable is the JSONException raised when the
+     * maximum nesting depth of a XML/JSONML parser configuration is reached.
+     * @param thrown the Throwable to check, may be null
+     * @param maxNestingDepth the maximum nesting depth expected in the message
+     */
+    public static void assertMaxNestingDepthReached(Throwable thrown, int maxNestingDepth) {
+        if (thrown == null) {
+            fail("Expecting a JSONException");
+        }
+        assertTrue("Wrong throwable thrown: " + thrown, thrown instanceof JSONException);
+        assertTrue("Wrong throwable thrown: not expecting message <" + thrown.getMessage() + ">",
+            thrown.getMessage().startsWith("Maximum nesting depth of " + maxNestingDepth + " "));
+    }
 }
